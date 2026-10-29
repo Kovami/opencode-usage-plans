@@ -48,12 +48,17 @@ const window = (
   }
 }
 
+// The endpoint sends numeric fields as strings. A null or empty value means
+// "absent", not zero, so it must fall through to the next source.
+const numeric = (value: unknown): number =>
+  value === null || value === undefined || value === "" ? Number.NaN : Number(value)
+
 const derivedPct = (detail?: Detail): number => {
-  const limit = Number(detail?.limit)
+  const limit = numeric(detail?.limit)
   if (!Number.isFinite(limit) || limit <= 0) return 0
-  const used = Number(detail?.used)
+  const used = numeric(detail?.used)
   if (Number.isFinite(used)) return (used / limit) * 100
-  const remaining = Number(detail?.remaining)
+  const remaining = numeric(detail?.remaining)
   if (Number.isFinite(remaining)) return ((limit - remaining) / limit) * 100
   return 0
 }

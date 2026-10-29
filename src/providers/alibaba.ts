@@ -40,9 +40,12 @@ const probe = (): Promise<boolean> =>
     execFile("bl", ["--version"], { timeout: 3_000 }, (error) => resolve(!error))
   })
 
+const SYSTEM_BL_PATHS = ["/opt/homebrew/bin/bl", "/usr/local/bin/bl"]
+
 export async function resolveBl(
   options: AlibabaOptions,
-  home = process.env.HOME ?? homedir(),
+  home = process.env.HOME || homedir(),
+  systemPaths = SYSTEM_BL_PATHS,
 ): Promise<string | undefined> {
   if (options.blPath && existsSync(options.blPath)) return options.blPath
   if (await probe()) return "bl"
@@ -50,8 +53,7 @@ export async function resolveBl(
   const known = [
     join(home, ".npm-global", "bin", "bl"),
     join(home, ".local", "bin", "bl"),
-    "/opt/homebrew/bin/bl",
-    "/usr/local/bin/bl",
+    ...systemPaths,
   ]
   return known.find((path) => existsSync(path))
 }

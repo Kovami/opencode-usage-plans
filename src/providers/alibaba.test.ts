@@ -98,7 +98,9 @@ describe("resolveBl", () => {
   })
 
   test("returns undefined when nothing is installed", async () => {
-    await expect(resolveBl({}, mkdtempSync(join(tmpdir(), "usage-alibaba-")))).resolves.toBeUndefined()
+    await expect(
+      resolveBl({}, mkdtempSync(join(tmpdir(), "usage-alibaba-")), []),
+    ).resolves.toBeUndefined()
   })
 })
 

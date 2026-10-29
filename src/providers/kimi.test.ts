@@ -90,6 +90,26 @@ describe("parseKimi", () => {
     expect(low[0].remainingPct).toBe(100)
   })
 
+  test("falls back to remaining when used is null", () => {
+    const windows = parseKimi(
+      {
+        limits: [
+          {
+            window: { duration: 300 },
+            detail: {
+              limit: "100",
+              used: null as unknown as string,
+              remaining: "70",
+              resetTime: RESET,
+            },
+          },
+        ],
+      },
+      NOW,
+    )
+    expect(windows[0]).toMatchObject({ usedPct: 30 })
+  })
+
   test("returns no windows for empty payloads", () => {
     expect(parseKimi(null, NOW)).toEqual([])
     expect(parseKimi({}, NOW)).toEqual([])
@@ -170,6 +190,26 @@ describe("fetchKimi", () => {
 
   test("maps a successful response without usable windows to a generic error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })))
+    await expect(fetchKimi(credentials, new AbortController().signal, NOW)).resolves.toEqual({
+      error: "Kimi usage unavailable",
+    })
+  })
+
+  test("maps an aborted request to a generic error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("The operation was aborted.", "AbortError")),
+    )
+    await expect(fetchKimi(credentials, new AbortController().signal, NOW)).resolves.toEqual({
+      error: "Kimi usage unavailable",
+    })
+  })
+
+  test("maps a non-JSON success body to a generic error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("<html>maintenance</html>", { status: 200 })),
+    )
     await expect(fetchKimi(credentials, new AbortController().signal, NOW)).resolves.toEqual({
       error: "Kimi usage unavailable",
     })

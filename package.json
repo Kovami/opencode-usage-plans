@@ -1,6 +1,6 @@
 {
   "name": "opencode-usage-plans",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Subscription quota for Kimi Code and Alibaba Cloud in OpenCode",
   "type": "module",
   "exports": {
