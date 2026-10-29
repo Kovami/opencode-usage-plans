@@ -1,0 +1,61 @@
+{
+  "name": "opencode-usage-plans",
+  "version": "0.1.0",
+  "description": "Subscription quota for Kimi Code and Alibaba Cloud in OpenCode",
+  "type": "module",
+  "exports": {
+    "./tui": "./src/tui.tsx"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "!src/**/*.test.ts"
+  ],
+  "keywords": [
+    "opencode",
+    "plugin",
+    "tui",
+    "usage",
+    "quota",
+    "kimi",
+    "alibaba"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kovami/opencode-usage-plans.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.2.1"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.6.6",
+    "@opentui/solid": ">=0.6.6",
+    "solid-js": ">=1.9.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/Kovami/opencode-usage-plans#readme",
+  "bugs": {
+    "url": "https://github.com/Kovami/opencode-usage-plans/issues"
+  },
+  "scripts": {
+    "check": "npm run typecheck && npm run test",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run check"
+  },
+  "devDependencies": {
+    "@opentui/core": "^0.7.0",
+    "@opentui/solid": "^0.7.0",
+    "@types/node": "^26.6.6",
+    "solid-js": "^1.9.12",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}
