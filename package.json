@@ -1,6 +1,6 @@
 {
   "name": "opencode-usage-plans",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Subscription quota for Kimi Code, OpenAI Codex, and Alibaba Cloud in OpenCode",
   "type": "module",
   "exports": {

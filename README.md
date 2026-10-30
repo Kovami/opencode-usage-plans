@@ -27,7 +27,7 @@ Add the plugin to the `plugins` array in `~/.config/opencode/cli.json`:
   "plugins": [
     "opencode-session-clock@0.1.1",
     "opencode-session-stats@0.1.0",
-    "opencode-usage-plans@0.1.1"
+    "opencode-usage-plans@0.2.0"
   ]
 }
 ```
@@ -38,7 +38,7 @@ To override options, use the object form:
 {
   "plugins": [
     {
-      "package": "opencode-usage-plans@0.1.1",
+      "package": "opencode-usage-plans@0.2.0",
       "options": {
         "kimi": { "enabled": true },
         "alibaba": { "enabled": true, "blPath": "/usr/local/bin/bl" }
@@ -109,6 +109,8 @@ the npm name:
   `auth.json` contains `kimi-code-plan-global`.
 - Alibaba block missing: run `bl login`, or set `alibaba.blPath` if `bl` lives
   outside `PATH` and the usual install locations.
+- OpenAI Codex block missing: sign in to Codex CLI (`codex login`), or log in
+  to OpenAI (ChatGPT) in OpenCode so `auth.json` contains `openai-codex`.
 - Invalid options: OpenCode logs a plugin load error; remove the option and
   reload the config.
 
