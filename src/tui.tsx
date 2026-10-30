@@ -5,11 +5,13 @@ import { TextAttributes } from "@opentui/core"
 import { quotaBar, quotaColor, windowLabel } from "./format"
 import { fetchAlibaba, resolveBl, type AlibabaOptions } from "./providers/alibaba"
 import { detectKimi, fetchKimi } from "./providers/kimi"
+import { detectOpenai, fetchOpenai } from "./providers/openai"
 import type { ProviderState, QuotaWindow } from "./providers/types"
 
 type Options = {
   kimi?: { enabled?: boolean }
   alibaba?: AlibabaOptions
+  openai?: { enabled?: boolean }
 }
 
 const REFRESH_MS = 300_000
@@ -27,6 +29,7 @@ export default Plugin.define({
     const kimiEnabled = options.kimi?.enabled !== false
     const alibabaOptions = options.alibaba ?? {}
     const alibabaEnabled = alibabaOptions.enabled !== false
+    const openaiEnabled = options.openai?.enabled !== false
 
     const [kimi, setKimi] = createSignal<ProviderState>(
       kimiEnabled ? { phase: "detecting" } : { phase: "hidden" },
@@ -34,11 +37,16 @@ export default Plugin.define({
     const [alibaba, setAlibaba] = createSignal<ProviderState>(
       alibabaEnabled ? { phase: "detecting" } : { phase: "hidden" },
     )
+    const [openai, setOpenai] = createSignal<ProviderState>(
+      openaiEnabled ? { phase: "detecting" } : { phase: "hidden" },
+    )
 
     let kimiBusy = false
     let alibabaBusy = false
+    let openaiBusy = false
     let kimiAbort: AbortController | undefined
     let alibabaAbort: AbortController | undefined
+    let openaiAbort: AbortController | undefined
 
     const runKimi = async (initial = false) => {
       if (!kimiEnabled) return
@@ -98,12 +106,43 @@ export default Plugin.define({
       }
     }
 
+    const runOpenai = async (initial = false) => {
+      if (!openaiEnabled) return
+      if (openaiBusy) return
+      openaiBusy = true
+      if (initial) setOpenai({ phase: "detecting" })
+      try {
+        const credentials = await detectOpenai()
+        if (!credentials) {
+          setOpenai({ phase: "hidden" })
+          return
+        }
+        openaiAbort?.abort()
+        const abort = new AbortController()
+        openaiAbort = abort
+        setOpenai({ phase: "loading" })
+        const result = await fetchOpenai(credentials, abort.signal)
+        if (abort.signal.aborted) return
+        if (Array.isArray(result)) {
+          setOpenai({ phase: "ok", windows: result })
+        } else {
+          setOpenai({ phase: "error", message: result.error })
+        }
+      } catch {
+        setOpenai({ phase: "error", message: "OpenAI usage unavailable" })
+      } finally {
+        openaiBusy = false
+      }
+    }
+
     void runKimi(true)
     void runAlibaba(true)
+    void runOpenai(true)
     const kimiTimer = setInterval(() => void runKimi(), REFRESH_MS)
     const alibabaTimer = setInterval(() => void runAlibaba(), REFRESH_MS)
+    const openaiTimer = setInterval(() => void runOpenai(), REFRESH_MS)
 
-    const visible = () => isVisible(kimi()) || isVisible(alibaba())
+    const visible = () => isVisible(kimi()) || isVisible(alibaba()) || isVisible(openai())
 
     const Windows = (props: { windows: QuotaWindow[] }) => (
       <For each={props.windows}>
@@ -133,7 +172,14 @@ export default Plugin.define({
             {(state) => <text fg={context.theme.text.muted}>{state().message}</text>}
           </Show>
           <Show when={okOf(props.state())}>
-            {(state) => <Windows windows={state().windows} />}
+            {(state) => (
+              <>
+                <Windows windows={state().windows} />
+                <Show when={state().windows.length === 0}>
+                  <text fg={context.theme.text.muted}>No usage data</text>
+                </Show>
+              </>
+            )}
           </Show>
         </box>
       </Show>
@@ -149,6 +195,7 @@ export default Plugin.define({
             </text>
             <Block title="Kimi Code (kimi.ai)" state={kimi} />
             <Block title="Alibaba Token Plan" state={alibaba} />
+            <Block title="OpenAI Codex" state={openai} />
           </box>
         </Show>
       ),
@@ -157,8 +204,10 @@ export default Plugin.define({
     return () => {
       clearInterval(kimiTimer)
       clearInterval(alibabaTimer)
+      clearInterval(openaiTimer)
       kimiAbort?.abort()
       alibabaAbort?.abort()
+      openaiAbort?.abort()
       disposeSidebar?.()
     }
   },
