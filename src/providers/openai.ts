@@ -65,8 +65,8 @@ const token = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value : undefined
 
 export async function detectOpenai(
-  home = homedir(),
-  dataHome = process.env.XDG_DATA_HOME ?? join(home, ".local", "share"),
+  home = process.env.HOME || homedir(),
+  dataHome = process.env.XDG_DATA_HOME || join(home, ".local", "share"),
 ): Promise<OpenaiCredentials | undefined> {
   const codex = readJson(join(home, ".codex", "auth.json"))
   if (isObject(codex) && isObject(codex.tokens)) {
