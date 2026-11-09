@@ -36,7 +36,7 @@ Add the plugin to the `plugins` array in `~/.config/opencode/cli.json`:
   "plugins": [
     "opencode-session-clock@0.1.1",
     "opencode-session-stats@0.1.0",
-    "opencode-usage-plans@0.2.0"
+    "opencode-usage-plans@0.3.0"
   ]
 }
 ```
@@ -47,7 +47,7 @@ To override options, use the object form:
 {
   "plugins": [
     {
-      "package": "opencode-usage-plans@0.2.0",
+      "package": "opencode-usage-plans@0.3.0",
       "options": {
         "kimi": { "enabled": true },
         "alibaba": { "enabled": true, "blPath": "/usr/local/bin/bl" }
