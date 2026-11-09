@@ -6,12 +6,14 @@ import { quotaBar, quotaColor, windowLabel } from "./format"
 import { fetchAlibaba, resolveBl, type AlibabaOptions } from "./providers/alibaba"
 import { detectKimi, fetchKimi } from "./providers/kimi"
 import { detectOpenai, fetchOpenai } from "./providers/openai"
+import { detectZai, fetchZai, type ZaiOptions } from "./providers/zai"
 import type { ProviderState, QuotaWindow } from "./providers/types"
 
 type Options = {
   kimi?: { enabled?: boolean }
   alibaba?: AlibabaOptions
   openai?: { enabled?: boolean }
+  zai?: ZaiOptions
 }
 
 const REFRESH_MS = 300_000
@@ -30,6 +32,8 @@ export default Plugin.define({
     const alibabaOptions = options.alibaba ?? {}
     const alibabaEnabled = alibabaOptions.enabled !== false
     const openaiEnabled = options.openai?.enabled !== false
+    const zaiOptions = options.zai ?? {}
+    const zaiEnabled = zaiOptions.enabled !== false
 
     const [kimi, setKimi] = createSignal<ProviderState>(
       kimiEnabled ? { phase: "detecting" } : { phase: "hidden" },
@@ -40,13 +44,18 @@ export default Plugin.define({
     const [openai, setOpenai] = createSignal<ProviderState>(
       openaiEnabled ? { phase: "detecting" } : { phase: "hidden" },
     )
+    const [zai, setZai] = createSignal<ProviderState>(
+      zaiEnabled ? { phase: "detecting" } : { phase: "hidden" },
+    )
 
     let kimiBusy = false
     let alibabaBusy = false
     let openaiBusy = false
+    let zaiBusy = false
     let kimiAbort: AbortController | undefined
     let alibabaAbort: AbortController | undefined
     let openaiAbort: AbortController | undefined
+    let zaiAbort: AbortController | undefined
 
     const runKimi = async (initial = false) => {
       if (!kimiEnabled) return
@@ -135,14 +144,46 @@ export default Plugin.define({
       }
     }
 
+    const runZai = async (initial = false) => {
+      if (!zaiEnabled) return
+      if (zaiBusy) return
+      zaiBusy = true
+      if (initial) setZai({ phase: "detecting" })
+      try {
+        const credentials = await detectZai()
+        if (!credentials) {
+          setZai({ phase: "hidden" })
+          return
+        }
+        zaiAbort?.abort()
+        const abort = new AbortController()
+        zaiAbort = abort
+        setZai({ phase: "loading" })
+        const result = await fetchZai(credentials, abort.signal, zaiOptions.baseUrl)
+        if (abort.signal.aborted) return
+        if (Array.isArray(result)) {
+          setZai({ phase: "ok", windows: result })
+        } else {
+          setZai({ phase: "error", message: result.error })
+        }
+      } catch {
+        setZai({ phase: "error", message: "Z.AI usage unavailable" })
+      } finally {
+        zaiBusy = false
+      }
+    }
+
     void runKimi(true)
     void runAlibaba(true)
     void runOpenai(true)
+    void runZai(true)
     const kimiTimer = setInterval(() => void runKimi(), REFRESH_MS)
     const alibabaTimer = setInterval(() => void runAlibaba(), REFRESH_MS)
     const openaiTimer = setInterval(() => void runOpenai(), REFRESH_MS)
+    const zaiTimer = setInterval(() => void runZai(), REFRESH_MS)
 
-    const visible = () => isVisible(kimi()) || isVisible(alibaba()) || isVisible(openai())
+    const visible = () =>
+      isVisible(kimi()) || isVisible(alibaba()) || isVisible(openai()) || isVisible(zai())
 
     const Windows = (props: { windows: QuotaWindow[] }) => (
       <For each={props.windows}>
@@ -196,6 +237,7 @@ export default Plugin.define({
             <Block title="Kimi Code (kimi.ai)" state={kimi} />
             <Block title="Alibaba Token Plan" state={alibaba} />
             <Block title="OpenAI Codex" state={openai} />
+            <Block title="Z.AI Coding Plan" state={zai} />
           </box>
         </Show>
       ),
@@ -205,9 +247,11 @@ export default Plugin.define({
       clearInterval(kimiTimer)
       clearInterval(alibabaTimer)
       clearInterval(openaiTimer)
+      clearInterval(zaiTimer)
       kimiAbort?.abort()
       alibabaAbort?.abort()
       openaiAbort?.abort()
+      zaiAbort?.abort()
       disposeSidebar?.()
     }
   },
