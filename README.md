@@ -16,7 +16,9 @@ credentials is simply not shown — there is no error and no empty block. The
 `Usage` header appears only when at least one provider is loading or has data.
 
 Quota refreshes every 5 minutes, so signing in again takes effect without
-restarting OpenCode.
+restarting OpenCode. The OpenAI Codex block refreshes an expiring OAuth token
+by itself, so usage keeps updating in the background even when the model is
+not in use.
 
 ## Install
 
@@ -74,10 +76,12 @@ The order above — clock, stats, usage — is the recommended sidebar order.
 
 ## Privacy
 
-Quota requests go only to `api.kimi.ai` and `chatgpt.com`; the Alibaba block
-runs the local `bl` CLI. Tokens are read from local auth files and sent only to
-their own provider. No keys, file paths, or raw errors are rendered in the
-sidebar.
+Quota requests go only to `api.kimi.ai` and `chatgpt.com`, and token refresh
+requests only to `auth.openai.com`; the Alibaba block runs the local `bl` CLI.
+Tokens are read from local auth files and sent only to their own provider.
+When OpenAI rotates a refresh token, the plugin writes the new pair back to
+the same auth file it read them from, so the Codex CLI and OpenCode stay in
+sync. No keys, file paths, or raw errors are rendered in the sidebar.
 
 ## Development
 
@@ -111,6 +115,9 @@ the npm name:
   outside `PATH` and the usual install locations.
 - OpenAI Codex block missing: sign in to Codex CLI (`codex login`), or log in
   to OpenAI (ChatGPT) in OpenCode so `auth.json` contains `openai-codex`.
+- OpenAI Codex shows "Codex sign-in expired": the plugin refreshes expiring
+  tokens on its own, so this message means the stored sign-in was rejected or
+  revoked — run `codex login` again.
 - Invalid options: OpenCode logs a plugin load error; remove the option and
   reload the config.
 

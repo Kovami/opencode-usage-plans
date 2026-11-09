@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -216,6 +216,19 @@ describe("detectOpenai", () => {
     )
     await expect(detectOpenai(home, join(home, "share"))).resolves.toEqual({
       accessToken: "codex-token",
+      source: { kind: "codex", path: join(home, ".codex", "auth.json") },
+    })
+  })
+
+  test("reads the Codex refresh token when present", async () => {
+    const home = makeHome(
+      ".codex/auth.json",
+      codexAuth({ access_token: "codex-token", refresh_token: "codex-refresh" }),
+    )
+    await expect(detectOpenai(home, join(home, "share"))).resolves.toEqual({
+      accessToken: "codex-token",
+      refreshToken: "codex-refresh",
+      source: { kind: "codex", path: join(home, ".codex", "auth.json") },
     })
   })
 
@@ -226,6 +239,7 @@ describe("detectOpenai", () => {
     writeFileSync(file, JSON.stringify({ "openai-codex": { type: "oauth", access: "oauth-token" } }))
     await expect(detectOpenai(home, join(home, "share"))).resolves.toEqual({
       accessToken: "codex-token",
+      source: { kind: "codex", path: join(home, ".codex", "auth.json") },
     })
   })
 
@@ -237,7 +251,10 @@ describe("detectOpenai", () => {
       join(dataHome, "opencode", "auth.json"),
       JSON.stringify({ "openai-codex": { type: "oauth", access: "data-token" } }),
     )
-    await expect(detectOpenai(home, dataHome)).resolves.toEqual({ accessToken: "data-token" })
+    await expect(detectOpenai(home, dataHome)).resolves.toEqual({
+      accessToken: "data-token",
+      source: { kind: "opencode", path: join(dataHome, "opencode", "auth.json") },
+    })
   })
 
   test("falls back to the OpenCode auth file in the home config", async () => {
@@ -247,6 +264,19 @@ describe("detectOpenai", () => {
     )
     await expect(detectOpenai(home, join(home, "share"))).resolves.toEqual({
       accessToken: "config-token",
+      source: { kind: "opencode", path: join(home, ".config", "opencode", "auth.json") },
+    })
+  })
+
+  test("reads the OpenCode refresh token when present", async () => {
+    const home = makeHome(
+      ".config/opencode/auth.json",
+      JSON.stringify({ "openai-codex": { type: "oauth", access: "config-token", refresh: "rt" } }),
+    )
+    await expect(detectOpenai(home, join(home, "share"))).resolves.toEqual({
+      accessToken: "config-token",
+      refreshToken: "rt",
+      source: { kind: "opencode", path: join(home, ".config", "opencode", "auth.json") },
     })
   })
 
@@ -257,6 +287,7 @@ describe("detectOpenai", () => {
     )
     await expect(detectOpenai(home, join(home, "share"))).resolves.toEqual({
       accessToken: "key-token",
+      source: { kind: "opencode", path: join(home, ".config", "opencode", "auth.json") },
     })
   })
 
@@ -267,6 +298,7 @@ describe("detectOpenai", () => {
     writeFileSync(file, JSON.stringify({ "openai-codex": { type: "oauth", access: "oauth-token" } }))
     await expect(detectOpenai(home, join(home, "share"))).resolves.toEqual({
       accessToken: "oauth-token",
+      source: { kind: "opencode", path: join(home, ".config", "opencode", "auth.json") },
     })
   })
 
@@ -304,7 +336,10 @@ describe("detectOpenai", () => {
     )
     vi.stubEnv("XDG_DATA_HOME", dataHome)
     vi.stubEnv("HOME", mkdtempSync(join(tmpdir(), "usage-openai-home-")))
-    await expect(detectOpenai()).resolves.toEqual({ accessToken: "env-token" })
+    await expect(detectOpenai()).resolves.toEqual({
+      accessToken: "env-token",
+      source: { kind: "opencode", path: join(dataHome, "opencode", "auth.json") },
+    })
   })
 })
 
@@ -376,5 +411,217 @@ describe("fetchOpenai", () => {
     await fetchOpenai(credentials, new AbortController().signal, NOW)
     const [, init] = fetchMock.mock.calls[0]
     expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal)
+  })
+})
+
+describe("fetchOpenai token refresh", () => {
+  const TOKEN_URL = "https://auth.openai.com/oauth/token"
+  const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+
+  const jwt = (claims: Record<string, unknown>): string => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
+    return `${encode({ alg: "RS256", typ: "JWT" })}.${encode(claims)}.signature`
+  }
+
+  const expiredToken = jwt({ exp: Math.floor(NOW / 1000) - 3600 })
+  const validToken = jwt({ exp: Math.floor(NOW / 1000) + 86400 })
+
+  const makeCodexHome = (tokens: Record<string, unknown>, extra: Record<string, unknown> = {}) => {
+    const home = mkdtempSync(join(tmpdir(), "usage-openai-refresh-"))
+    mkdirSync(join(home, ".codex"), { recursive: true })
+    const file = join(home, ".codex", "auth.json")
+    writeFileSync(file, JSON.stringify({ auth_mode: "chatgpt", last_refresh: "old", ...extra, tokens }))
+    return { home, file }
+  }
+
+  const makeOpencodeHome = (entry: Record<string, unknown>) => {
+    const home = mkdtempSync(join(tmpdir(), "usage-openai-refresh-"))
+    const file = join(home, ".config", "opencode", "auth.json")
+    mkdirSync(join(file, ".."), { recursive: true })
+    writeFileSync(file, JSON.stringify({ "openai-codex": { type: "oauth", ...entry } }))
+    return { home, file }
+  }
+
+  const refreshResponse = (status: number, body: unknown) => new Response(JSON.stringify(body), { status })
+  const okRefresh = {
+    access_token: "new-access",
+    refresh_token: "new-refresh",
+    id_token: "new-id",
+    expires_in: 3600,
+    account_id: "acct-2",
+  }
+
+  const routeFetch = (usageResponder: (init: unknown) => Response) =>
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === TOKEN_URL) return refreshResponse(200, okRefresh)
+      return usageResponder(init)
+    })
+
+  const readJson = (path: string): Record<string, any> => JSON.parse(readFileSync(path, "utf8"))
+
+  test("refreshes an expired token proactively and persists the rotated pair", async () => {
+    const { home, file } = makeCodexHome(
+      { access_token: expiredToken, refresh_token: "old-refresh", account_id: "acct-1" },
+      { OPENAI_API_KEY: "keep-me" },
+    )
+    const creds = await detectOpenai(home, join(home, "share"))
+    expect(creds?.refreshToken).toBe("old-refresh")
+
+    const fetchMock = vi.fn(routeFetch(() => new Response(JSON.stringify(realPayload), { status: 200 })))
+    vi.stubGlobal("fetch", fetchMock)
+    const windows = await fetchOpenai(creds!, new AbortController().signal, NOW)
+    expect(windows).toHaveLength(2)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [tokenUrl, tokenInit] = fetchMock.mock.calls[0]
+    expect(tokenUrl).toBe(TOKEN_URL)
+    expect((tokenInit as RequestInit).method).toBe("POST")
+    expect(JSON.parse((tokenInit as RequestInit).body as string)).toEqual({
+      client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+      grant_type: "refresh_token",
+      refresh_token: "old-refresh",
+      scope: "openid profile email offline_access",
+    })
+    const [usageUrl, usageInit] = fetchMock.mock.calls[1]
+    expect(usageUrl).toBe(USAGE_URL)
+    expect((usageInit as RequestInit).headers).toEqual({ Authorization: "Bearer new-access" })
+
+    const saved = readJson(file)
+    expect(saved.tokens.access_token).toBe("new-access")
+    expect(saved.tokens.refresh_token).toBe("new-refresh")
+    expect(saved.tokens.id_token).toBe("new-id")
+    expect(saved.tokens.account_id).toBe("acct-2")
+    expect(saved.last_refresh).not.toBe("old")
+    expect(saved.OPENAI_API_KEY).toBe("keep-me")
+    expect(saved.auth_mode).toBe("chatgpt")
+  })
+
+  test("persists rotated tokens to the OpenCode entry keeping the epoch-ms expiry format", async () => {
+    const { home, file } = makeOpencodeHome({
+      access: expiredToken,
+      refresh: "old-refresh",
+      expires: 123,
+      type: "oauth",
+    })
+    const creds = await detectOpenai(home, join(home, "share"))
+    const fetchMock = vi.fn(routeFetch(() => new Response(JSON.stringify(realPayload), { status: 200 })))
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(fetchOpenai(creds!, new AbortController().signal, NOW)).resolves.toHaveLength(2)
+
+    const entry = readJson(file)["openai-codex"]
+    expect(entry.access).toBe("new-access")
+    expect(entry.refresh).toBe("new-refresh")
+    expect(entry.expires).toBe(NOW + 3600_000)
+    expect(entry.type).toBe("oauth")
+  })
+
+  test("keeps the ISO string expiry format in the OpenCode entry", async () => {
+    const { home, file } = makeOpencodeHome({
+      access: expiredToken,
+      refresh: "old-refresh",
+      expires: "2020-01-01T00:00:00.000Z",
+    })
+    const creds = await detectOpenai(home, join(home, "share"))
+    vi.stubGlobal("fetch", vi.fn(routeFetch(() => new Response(JSON.stringify(realPayload), { status: 200 }))))
+    await fetchOpenai(creds!, new AbortController().signal, NOW)
+
+    const entry = readJson(file)["openai-codex"]
+    expect(typeof entry.expires).toBe("string")
+    expect(new Date(entry.expires).getTime()).toBe(NOW + 3600_000)
+  })
+
+  test("refreshes once and retries after a 401", async () => {
+    const { home, file } = makeCodexHome({ access_token: validToken, refresh_token: "old-refresh" })
+    const creds = await detectOpenai(home, join(home, "share"))
+    let usageCalls = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === TOKEN_URL) return refreshResponse(200, okRefresh)
+      usageCalls += 1
+      if (usageCalls === 1) return new Response("", { status: 401 })
+      return new Response(JSON.stringify(realPayload), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const windows = await fetchOpenai(creds!, new AbortController().signal, NOW)
+    expect(windows).toHaveLength(2)
+    expect(usageCalls).toBe(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[1][0]).toBe(TOKEN_URL)
+    expect(readJson(file).tokens.access_token).toBe("new-access")
+  })
+
+  test("does not refresh while the token is still valid", async () => {
+    const { home } = makeCodexHome({ access_token: validToken, refresh_token: "old-refresh" })
+    const creds = await detectOpenai(home, join(home, "share"))
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(realPayload), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(fetchOpenai(creds!, new AbortController().signal, NOW)).resolves.toHaveLength(2)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0]).toBe(USAGE_URL)
+  })
+
+  test("skips refresh when no refresh token is stored", async () => {
+    const { home } = makeCodexHome({ access_token: expiredToken })
+    const creds = await detectOpenai(home, join(home, "share"))
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 401 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await fetchOpenai(creds!, new AbortController().signal, NOW)
+    expect(result).toEqual({ error: "Codex sign-in expired — run codex login" })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0]).toBe(USAGE_URL)
+  })
+
+  test("falls back to the stored token when the refresh call fails", async () => {
+    const { home } = makeCodexHome({ access_token: expiredToken, refresh_token: "old-refresh" })
+    const creds = await detectOpenai(home, join(home, "share"))
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url === TOKEN_URL) return refreshResponse(500, { error: "server_error" })
+      return new Response(JSON.stringify(realPayload), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const windows = await fetchOpenai(creds!, new AbortController().signal, NOW)
+    expect(windows).toHaveLength(2)
+    const [, usageInit] = fetchMock.mock.calls[1]
+    expect((usageInit as RequestInit).headers).toEqual({
+      Authorization: `Bearer ${expiredToken}`,
+    })
+  })
+
+  test("still reports the sign-in error when refresh and retry both fail", async () => {
+    const { home } = makeCodexHome({ access_token: validToken, refresh_token: "old-refresh" })
+    const creds = await detectOpenai(home, join(home, "share"))
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === TOKEN_URL) return refreshResponse(400, { error: "invalid_grant" })
+      return new Response("", { status: 403 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await fetchOpenai(creds!, new AbortController().signal, NOW)
+    expect(result).toEqual({ error: "Codex sign-in expired — run codex login" })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  test("never surfaces tokens in errors", async () => {
+    const { home } = makeCodexHome({ access_token: expiredToken, refresh_token: "super-secret-refresh" })
+    const creds = await detectOpenai(home, join(home, "share"))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === TOKEN_URL) throw new Error("refresh rejected for super-secret-refresh")
+        return new Response("", { status: 401 })
+      }),
+    )
+    const result = await fetchOpenai(creds!, new AbortController().signal, NOW)
+    expect(result).toEqual({ error: "Codex sign-in expired — run codex login" })
+    expect(JSON.stringify(result)).not.toContain("super-secret-refresh")
+    expect(JSON.stringify(result)).not.toContain(expiredToken)
+  })
+
+  test("treats non-JWT tokens as never expiring", async () => {
+    const { home } = makeOpencodeHome({ access: "plain-api-key", refresh: "rt" })
+    const creds = await detectOpenai(home, join(home, "share"))
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(realPayload), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(fetchOpenai(creds!, new AbortController().signal, NOW)).resolves.toHaveLength(2)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0]).toBe(USAGE_URL)
   })
 })
