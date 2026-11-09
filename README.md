@@ -22,6 +22,11 @@ restarting OpenCode. The OpenAI Codex block refreshes an expiring OAuth token
 by itself, so usage keeps updating in the background even when the model is
 not in use.
 
+Providers are sorted by last use: the ones you used most recently sit at the
+top, and the rest follow in alphabetical order. A provider counts as used when
+a session selects its model or starts an execution with it, and this order is
+remembered across restarts.
+
 ## Install
 
 Add the plugin to the `plugins` array in `~/.config/opencode/cli.json`:
@@ -88,7 +93,9 @@ Quota requests go only to `api.kimi.ai`, `chatgpt.com`, and `api.z.ai` (or
 `auth.openai.com`; the Alibaba block runs the local `bl` CLI. Tokens are read
 from local auth files and sent only to their own provider. When OpenAI rotates
 a refresh token, the plugin writes the new pair back to the same auth file it
-read them from, so the Codex CLI and OpenCode stay in sync. No keys, file
+read them from, so the Codex CLI and OpenCode stay in sync. The plugin also
+stores one timestamp per provider — when each was last used — through the
+standard OpenCode plugin storage; no other data is persisted. No keys, file
 paths, or raw errors are rendered in the sidebar.
 
 ## Development

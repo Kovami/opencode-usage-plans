@@ -3,6 +3,7 @@ import { Plugin } from "@opencode/plugin/tui"
 import { createSignal, For, Show } from "solid-js"
 import { TextAttributes } from "@opentui/core"
 import { quotaBar, quotaColor, windowLabel } from "./format"
+import { blockOfProviderID, sortProviders } from "./order"
 import { fetchAlibaba, resolveBl, type AlibabaOptions } from "./providers/alibaba"
 import { detectKimi, fetchKimi } from "./providers/kimi"
 import { detectOpenai, fetchOpenai } from "./providers/openai"
@@ -46,6 +47,26 @@ export default Plugin.define({
     )
     const [zai, setZai] = createSignal<ProviderState>(
       zaiEnabled ? { phase: "detecting" } : { phase: "hidden" },
+    )
+
+    // Last time a session actually used each provider, persisted across
+    // restarts. Recently used providers sort to the top of the sidebar.
+    const [lastUsed, setLastUsed] = context.storage.store("last-used", {
+      initial: {} as Record<string, number>,
+    })
+
+    const markUsed = (providerID: string | undefined) => {
+      const block = blockOfProviderID(providerID)
+      if (!block) return
+      void setLastUsed((draft) => {
+        draft[block] = Date.now()
+      })
+    }
+    const offModelSelected = context.data.on("session.model.selected", (event) =>
+      markUsed(event.data.model.providerID),
+    )
+    const offExecutionStarted = context.data.on("session.execution.started", (event) =>
+      markUsed(context.data.session.get(event.data.sessionID)?.model?.providerID),
     )
 
     let kimiBusy = false
@@ -226,6 +247,17 @@ export default Plugin.define({
       </Show>
     )
 
+    const blocks = () =>
+      sortProviders(
+        [
+          { id: "kimi" as const, title: "Kimi Code (kimi.ai)", state: kimi },
+          { id: "alibaba" as const, title: "Alibaba Token Plan", state: alibaba },
+          { id: "openai" as const, title: "OpenAI Codex", state: openai },
+          { id: "zai" as const, title: "Z.AI Coding Plan", state: zai },
+        ],
+        lastUsed,
+      )
+
     const disposeSidebar = context.ui.slot({
       append: "sidebar.content",
       render: () => (
@@ -234,10 +266,9 @@ export default Plugin.define({
             <text fg={context.theme.text.base} attributes={TextAttributes.BOLD}>
               Usage
             </text>
-            <Block title="Kimi Code (kimi.ai)" state={kimi} />
-            <Block title="Alibaba Token Plan" state={alibaba} />
-            <Block title="OpenAI Codex" state={openai} />
-            <Block title="Z.AI Coding Plan" state={zai} />
+            <For each={blocks()}>
+              {(block) => <Block title={block.title} state={block.state} />}
+            </For>
           </box>
         </Show>
       ),
@@ -252,6 +283,8 @@ export default Plugin.define({
       alibabaAbort?.abort()
       openaiAbort?.abort()
       zaiAbort?.abort()
+      offModelSelected()
+      offExecutionStarted()
       disposeSidebar?.()
     }
   },
