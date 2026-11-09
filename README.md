@@ -1,7 +1,8 @@
 # opencode-usage-plans
 
-A TUI plugin for OpenCode that shows subscription quota for the providers you
-use, under one `Usage` block in the sidebar.
+A standalone TUI plugin for OpenCode that shows subscription quota for the
+providers you use, under one `Usage` block in the sidebar. It lives in its own
+repository and works on its own — nothing else to install.
 
 ## What it shows
 
@@ -29,17 +30,23 @@ remembered across restarts.
 
 ## Install
 
-Add the plugin to the `plugins` array in `~/.config/opencode/cli.json`:
+`opencode-usage-plans` is a standalone plugin: one npm package, no other
+plugins, servers, or accounts required. It reads credentials that OpenCode or
+the provider CLIs already have and renders quota in the sidebar.
+
+### Manually
+
+Add the plugin to the `plugins` array in `~/.config/opencode/cli.json`. If you
+already have that file, add one entry; if not, create it:
 
 ```json
 {
-  "plugins": [
-    "opencode-session-clock@0.1.1",
-    "opencode-session-stats@0.1.0",
-    "opencode-usage-plans@0.3.0"
-  ]
+  "plugins": ["opencode-usage-plans@0.3.0"]
 }
 ```
+
+Restart OpenCode. The `Usage` block appears once any supported provider's
+credentials are found — see [Requirements](#requirements).
 
 To override options, use the object form:
 
@@ -57,7 +64,22 @@ To override options, use the object form:
 }
 ```
 
-The order above — clock, stats, usage — is the recommended sidebar order.
+### Let your agent install it
+
+Paste this prompt into OpenCode (or any coding agent with shell access):
+
+```text
+Install the opencode-usage-plans plugin for me:
+
+1. Read ~/.config/opencode/cli.json. If it does not exist, create it with {}.
+2. Add "opencode-usage-plans@0.3.0" to the "plugins" array. Keep every
+   existing entry and keep the file valid JSON.
+3. Print the resulting "plugins" array so I can verify it.
+
+Do not change anything else in the file.
+```
+
+Then restart OpenCode.
 
 ## Options
 
